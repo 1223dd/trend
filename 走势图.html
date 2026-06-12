@@ -8,10 +8,11 @@
     body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #e9ecef; margin: 0; padding: 20px; }
     .container { max-width: 100%; margin: 0 auto; }
     .toolbar { background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .btn-group { margin-bottom: 15px; }
+    .btn-group { margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
     .btn-group.readonly { display: none; }
-    button { background: #6c757d; color: white; border: none; padding: 6px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px; }
+    button { background: #6c757d; color: white; border: none; padding: 6px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; }
     button.primary { background: #e67e22; }
+    button.secondary { background: #28a745; }
     .page-control { display: flex; align-items: center; gap: 15px; margin-top: 15px; flex-wrap: wrap; }
     .charts-wrapper { overflow-x: auto; }
     .charts-row { display: flex; flex-direction: row; gap: 20px; width: fit-content; }
@@ -82,6 +83,7 @@
         <div class="btn-group" id="btnGroup">
             <button id="openModalBtn" class="primary">🔍 设置查找条件</button>
             <button id="clearBtn">🗑️ 清除高亮</button>
+            <button id="copyShareLinkBtn" class="secondary">📎 复制带标记的链接</button>
         </div>
         <div class="page-control">
             <button id="prevPage">◀ 上一页</button>
@@ -273,6 +275,49 @@
             drawAllCharts();
         }
         document.getElementById('infoMsg').innerHTML = `🗑️ 已清除所有高亮标记。`;
+    }
+    
+    // 生成带标记的分享链接（基于当前页面的完整URL，如果本地则提示）
+    function copyShareLink() {
+        const toEncode = {};
+        for (let key of posKeys) {
+            toEncode[key] = Array.from(highlights[key]);
+        }
+        const jsonStr = JSON.stringify(toEncode);
+        const encoded = encodeURIComponent(jsonStr);
+        let baseUrl = window.location.href.split('#')[0].split('?')[0];
+        // 如果是在本地 file:// 协议下，提示用户应先部署到线上
+        if (baseUrl.startsWith('file://')) {
+            document.getElementById('infoMsg').innerHTML = '❌ 当前是本地文件，无法生成分享链接。请将文件上传到 GitHub Pages 或使用在线托管平台。';
+            return;
+        }
+        const shareUrl = baseUrl + '?mode=readonly#' + encoded;
+        navigator.clipboard.writeText(shareUrl).then(() => {
+            document.getElementById('infoMsg').innerHTML = '✅ 已复制带标记的链接！请分享给他人。';
+        }).catch(() => {
+            document.getElementById('infoMsg').innerHTML = '❌ 复制失败，请手动复制链接。';
+        });
+    }
+    
+    // 从 URL hash 中加载高亮
+    function loadHighlightsFromHash() {
+        const hash = window.location.hash.substring(1);
+        if (hash) {
+            try {
+                const decoded = decodeURIComponent(hash);
+                const obj = JSON.parse(decoded);
+                for (let key of posKeys) {
+                    if (obj[key]) {
+                        highlights[key] = new Set(obj[key]);
+                    }
+                }
+                // 将加载的高亮也保存到 localStorage，方便下次使用
+                saveHighlights();
+                document.getElementById('infoMsg').innerHTML = '📌 已从链接加载标记颜色。';
+            } catch(e) {
+                console.warn('解析 hash 失败', e);
+            }
+        }
     }
     
     function drawChartOnCanvas(canvas, values, periods, startRow, rows, posKey, isLarge = false) {
@@ -492,9 +537,11 @@
     document.getElementById('pageSize').value = pageSize;
     currentPage = loadCurrentPage();
     // 确保页码不超过总页数
-    const totalPages = Math.ceil(currentData.periods.length / pageSize);
+    let totalPages = Math.ceil(currentData.periods.length / pageSize);
     if (currentPage >= totalPages) currentPage = 0;
     loadHighlights();
+    // 如果 URL hash 中有高亮数据，优先使用（覆盖本地存储）
+    loadHighlightsFromHash();
     
     const openBtn = document.getElementById('openModalBtn');
     if (openBtn && !isReadonly) {
@@ -503,6 +550,10 @@
             document.querySelector(`input[name="dataSource"][value="${isSingle ? 'single' : 'double'}"]`).checked = true;
             document.getElementById('myModal').style.display = 'block';
         };
+    }
+    const copyBtn = document.getElementById('copyShareLinkBtn');
+    if (copyBtn && !isReadonly) {
+        copyBtn.onclick = copyShareLink;
     }
     const closeModal = document.getElementById('closeModal');
     if (closeModal) closeModal.onclick = () => document.getElementById('myModal').style.display = 'none';
